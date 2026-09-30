@@ -46,3 +46,68 @@ export function addMonths(iso: string, months: number): string {
   date.setUTCMonth(date.getUTCMonth() + months);
   return date.toISOString();
 }
+
+const kbcAmount = new Intl.NumberFormat("fr-BE", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const dayMonthNumeric = new Intl.DateTimeFormat("nl-BE", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "Europe/Brussels",
+});
+
+const monthLongNl = new Intl.DateTimeFormat("nl-BE", {
+  month: "long",
+  timeZone: "Europe/Brussels",
+});
+
+const DUTCH_MONTH_ABBREVIATIONS = [
+  "Jan",
+  "Feb",
+  "Mrt",
+  "Apr",
+  "Mei",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Okt",
+  "Nov",
+  "Dec",
+] as const;
+
+/** KBC Mobile style: "5 565,74" with a true minus sign for debits ("−7,00"). */
+export function formatKbcAmount(amount: number): string {
+  const formatted = kbcAmount.format(Math.abs(amount));
+  return amount < 0 ? `−${formatted}` : formatted;
+}
+
+/** "30/09" */
+export function formatDayMonthNumeric(iso: string): string {
+  return dayMonthNumeric.format(new Date(iso));
+}
+
+/** "September" */
+export function formatMonthNameNl(iso: string): string {
+  const name = monthLongNl.format(new Date(iso));
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/** "Sep", from a zero-based month index. */
+export function dutchMonthAbbreviation(monthIndex: number): string {
+  return DUTCH_MONTH_ABBREVIATIONS[((monthIndex % 12) + 12) % 12] ?? "";
+}
+
+/** Zero-based month index and year in Brussels time. */
+export function brusselsMonth(iso: string): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+    month: "numeric",
+    timeZone: "Europe/Brussels",
+  }).formatToParts(new Date(iso));
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value) - 1;
+  return { year, month };
+}
