@@ -14,6 +14,8 @@ export type LifeEventMarker =
   | "childcare"
   | "hospital"
   | "notary"
+  | "legal"
+  | "insurance"
   | "contractor";
 
 /** Where in the payment the evidence was found. */
@@ -99,6 +101,21 @@ export const MARKERS: readonly MarkerDefinition[] = [
     direction: "debit",
     keywords: /notari\w*|notaire|notary/i,
     supportingMccs: [MCC.LEGAL_SERVICES],
+  },
+  {
+    marker: "legal",
+    label: "Legal services",
+    direction: "debit",
+    keywords: /advoca\w*|juridisch\w*|rechtsbijstand|avocat\w*/i,
+    decisiveMccs: [MCC.LEGAL_SERVICES],
+  },
+  {
+    marker: "insurance",
+    label: "Life or funeral insurance",
+    direction: "debit",
+    keywords:
+      /levensverzekering\w*|overlijdensverzekering\w*|uitvaartverzekering\w*|tak 2[13]|assurance[- ]vie|assurance obs[eè]ques/i,
+    decisiveMccs: [MCC.INSURANCE],
   },
   {
     marker: "contractor",

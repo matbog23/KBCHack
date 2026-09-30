@@ -39,7 +39,7 @@ That is why Kate reads the **MCC, the counterparty's name and the payment messag
 
 ## Step 1: what does this payment say?
 
-Every booked payment is checked against seven *markers*. Most everyday payments match none.
+Every booked payment is checked against nine *markers*. Most everyday payments match none.
 
 | Marker | Recognised when… | Code alone enough? |
 |---|---|---|
@@ -49,6 +49,8 @@ Every booked payment is checked against seven *markers*. Most everyday payments 
 | **Childcare** | *kinderdagverblijf, kinderopvang, crèche, onthaalouder…* | Yes: 8351 is only childcare |
 | **Hospital bill** | *ziekenhuis, kliniek, hôpital*, or a hospital acronym (*AZ, UZ, ZNA, GZA, CHU…*) | Yes: 8062 |
 | **Notary** | *notaris, notariskantoor, notaire* | No: 8111 is any legal service |
+| **Lawyer** | *advocaat, advocatenkantoor, juridisch, rechtsbijstand, avocat* | Yes: 8111 legal services |
+| **Life or funeral insurance** | *levensverzekering, overlijdens-/uitvaartverzekering, tak 21/23, assurance-vie* | Yes: 6300 insurance |
 | **Building contractor** | *aannemer, bouwbedrijf, renovatie, dakwerken, isolatie, warmtepomp…* and **≥ €1,000** | Yes: 1520, still ≥ €1,000 |
 
 Extra rules that keep it honest:
@@ -80,13 +82,17 @@ hasn't already been helped.
 
 ### Estate planning → inheritance-tax simulator (Jan, 75)
 
+Estate planning is a consent-gated **fixed demo score**, not a trained model (see
+[GOVERNANCE.md](GOVERNANCE.md)).
+
 | Check | Rule |
 |---|---|
-| Who | age **65+** |
-| Signals | hospital bill · notary about a will, gift or inheritance (**not** a purchase) |
-| Recent | within the last **6 months** |
-| Never on its own | age and wealth alone **never** trigger. Kate waits for a life event |
-| Priority | assets at KBC ≥ **€250,000** plus a signal = high, otherwise medium |
+| Gate | the customer gave **estate-planning outreach consent**. Without it, nothing |
+| Five inputs | age ≥ **65** (+0.6) · assets at KBC ≥ **€250,000** (+0.9) · a payment signal (+0.8) · savings grew ≥ **€25,000** in a year (+0.5) · declared interest (+0.9) |
+| Score | `-2.4 + sum`, squashed with `1 / (1 + e^-score)`. Kate speaks at **≥ 45%** |
+| Payment signals | booked debits in the last **12 months**: notary about a will, gift or inheritance (**not** a purchase), lawyer, life or funeral insurance. Hospital bills **only** with separate health-signal consent |
+| Priority | a payment signal = high, otherwise medium |
+| Jan in the demo | consent + interest + age + assets = exactly 50% → medium on load. A notary, lawyer or insurance payment → high. A hospital bill changes nothing (no health consent) |
 | Tax figure | Flemish direct-line brackets 3% / 9% / 27% per heir, 2 heirs assumed, labelled *indicative* |
 | Tone | the customer-facing text never mentions the hospital |
 
@@ -111,10 +117,13 @@ recognised as, and why when it wasn't (*"everyday spending · MCC 8011 Doctors"*
 |---|---|---|
 | Family age | 18–50 | `KATE_THRESHOLDS.familyMinAge/MaxAge` |
 | Estate-planning age | 65+ | `KATE_THRESHOLDS.estatePlanningMinAge` |
-| Assets that make estate planning high priority | €250,000 | `KATE_THRESHOLDS.estatePlanningMinAssets` |
+| Assets input of the estate score | €250,000 | `KATE_THRESHOLDS.estatePlanningMinAssets` |
 | Heirs assumed in the tax estimate | 2 | `KATE_THRESHOLDS.assumedHeirs` |
 | Family lookback | 365 days | `KATE_THRESHOLDS.familyLookbackDays` |
-| Estate / home lookback | 180 days | `KATE_THRESHOLDS.estateLookbackDays/homeLookbackDays` |
+| Estate payment window | 12 months | `KATE_THRESHOLDS.estatePlanningSignalMonths` |
+| Estate savings growth | €25,000 | `KATE_THRESHOLDS.estatePlanningMinSavingsGrowth` |
+| Estate score cutoff | 45% | `KATE_THRESHOLDS.estatePlanningCutoff` (weights: `ESTATE_SCORE_WEIGHTS`) |
+| Home / renovation lookback | 180 days | `KATE_THRESHOLDS.homeLookbackDays` |
 | Birth grant minimum | €1,000 | `SIGNAL_THRESHOLDS.birthGrantMinAmount` |
 | Renovation minimum | €1,000 | `SIGNAL_THRESHOLDS.renovationMinAmount` |
 | Notary deposit that means "purchase" | €5,000 | `SIGNAL_THRESHOLDS.homePurchaseMinNotaryAmount` |

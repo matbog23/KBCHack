@@ -84,9 +84,17 @@ describe("recogniseTransaction", () => {
     expect(markers(cardPayment("Het Nestje", MCC.CHILD_CARE, 40))).toEqual(["childcare"]);
   });
 
-  it("a notary needs the name: the generic legal-services code alone is not enough", () => {
+  it("a notary needs the name: the legal-services code means a lawyer, not a notary", () => {
     expect(markers(SAMPLE.notaryEstate)).toEqual(["notary"]);
-    expect(markers(cardPayment("Advocatenkantoor Peeters", MCC.LEGAL_SERVICES, 250))).toEqual([]);
+    expect(markers(cardPayment("Kantoor Peeters", MCC.LEGAL_SERVICES, 250))).toEqual(["legal"]);
+  });
+
+  it("life insurance is recognised by the insurance code or life/funeral wording", () => {
+    expect(markers(cardPayment("Atlas", MCC.INSURANCE, 120))).toEqual(["insurance"]);
+    expect(markers(directDebit("Atlas NV", "Premie levensverzekering tak 21", 120))).toEqual([
+      "insurance",
+    ]);
+    expect(markers(directDebit("Atlas NV", "Premie autoverzekering", 60))).toEqual([]);
   });
 
   it("contractor payments count from the renovation threshold", () => {

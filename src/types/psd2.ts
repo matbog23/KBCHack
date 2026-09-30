@@ -28,6 +28,7 @@ export const MCC = {
   CHILD_CARE: "8351",
   GENERAL_CONTRACTORS: "1520",
   LEGAL_SERVICES: "8111",
+  INSURANCE: "6300",
   GROCERY: "5411",
   EATING_PLACES: "5812",
   FUEL: "5541",
@@ -101,6 +102,14 @@ export interface UserPersona {
   checkingBalance: number;
   /** Current balance of the KBC savings account (spaarrekening). */
   savingsBalance: number;
+  /** Snapshot used for the optional 12-month savings growth signal. */
+  savingsBalance12MonthsAgo?: number;
+  /** Separate permission to use data for proactive estate-planning invitations. */
+  estateOutreachConsent?: boolean;
+  /** Special-category health inference is never used without explicit permission. */
+  healthSignalConsent?: boolean;
+  /** Interest explicitly registered by the customer, not inferred from transactions. */
+  estatePlanningInterest?: boolean;
   lifeStage: LifeStage;
   /** One-line description shown in the persona selector. */
   tagline: string;

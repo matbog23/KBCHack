@@ -66,9 +66,10 @@ has to be realistic enough to hold up under questions from bankers.
    and the new account appears in Emma's carousel. A later **Childcare** direct debit →
    *add the child to hospitalisation insurance*. A **GP visit** proves precision: same MCC,
    no nudge.
-2. **Estate planning (Jan).** Nothing on age and wealth alone. A **Hospital bill** or a
-   **Notary · estate** payment → *"Regel vandaag wat je later wil doorgeven."* with an
-   indicative inheritance-tax figure. **Ja, bekijk mijn opties** opens the gift simulator and
+2. **Estate planning (Jan).** Jan consented to estate outreach and declared an interest, so
+   on load Kate shows *"Regel vandaag wat je later wil doorgeven."* (medium) with an
+   indicative inheritance-tax figure. A **Notary · estate**, **Lawyer** or **Life insurance**
+   payment makes it high priority. A **Hospital bill** changes nothing without health consent. **Ja, bekijk mijn opties** opens the gift simulator and
    books an expert call.
 3. **Other moments.** **Notary · home** (a purchase deposit) → home-loan simulator.
    **Contractor** ≥ €1,000 → update home insurance and look at a green renovation loan.

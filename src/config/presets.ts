@@ -132,6 +132,32 @@ export const DRAFT_PRESETS: readonly DraftPreset[] = [
     },
   },
   {
+    id: "legal",
+    personas: ["jan"],
+    label: "Lawyer",
+    draft: {
+      paymentType: "transfer-out",
+      amount: "180,00",
+      counterpartyName: "Advocatenkantoor Peeters",
+      counterpartyIban: "BE05 0017 1122 3375",
+      merchantCategoryCode: "",
+      remittanceInformation: "Ereloon juridisch advies",
+    },
+  },
+  {
+    id: "insurance",
+    personas: ["jan"],
+    label: "Life insurance",
+    draft: {
+      paymentType: "direct-debit",
+      amount: "120,00",
+      counterpartyName: "Atlas Verzekeringen NV",
+      counterpartyIban: "BE05 0689 3344 5575",
+      merchantCategoryCode: "",
+      remittanceInformation: "Premie levensverzekering tak 21",
+    },
+  },
+  {
     id: "pharmacy",
     personas: ["jan"],
     label: "Pharmacy",

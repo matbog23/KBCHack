@@ -150,18 +150,30 @@ describe("useKbcStore", () => {
   describe("scenario 2: elderly customer", () => {
     beforeEach(() => store().setPersona("jan"));
 
-    it("switching to Jan raises nothing until a life event arrives", () => {
-      expect(store().activeAlerts).toEqual([]);
-      expect(store().notification).toBeNull();
+    it("switching to Jan pushes his consented, declared-interest estate moment", () => {
+      expect(store().activeAlerts).toEqual([
+        expect.objectContaining({ ruleId: "successieplanning", priority: "medium" }),
+      ]);
+      expect(store().notification?.alert.flow).toBe("estate-planner");
     });
 
-    it("a hospital bill pushes the estate moment", () => {
+    it("a hospital bill needs health consent; a lawyer and life insurance escalate", () => {
       store().submitDraft(preset("hospital"));
-      expect(store().notification?.alert).toMatchObject({
-        ruleId: "successieplanning",
-        flow: "estate-planner",
-        priority: "high",
+      expect(store().activeAlerts[0]).toMatchObject({
+        priority: "medium",
+        evidenceTransactionIds: [],
       });
+
+      store().submitDraft(preset("legal"));
+      const lawyerId = store().transactions[0]?.transactionId;
+      expect(store().activeAlerts[0]).toMatchObject({
+        priority: "high",
+        evidenceTransactionIds: [lawyerId],
+      });
+
+      store().submitDraft(preset("insurance"));
+      const insuranceId = store().transactions[0]?.transactionId;
+      expect(store().activeAlerts[0]?.evidenceTransactionIds).toEqual([insuranceId, lawyerId]);
     });
 
     it("a notary about a will pushes the estate moment too", () => {
@@ -170,7 +182,6 @@ describe("useKbcStore", () => {
     });
 
     it("requesting advice closes the moment", () => {
-      store().submitDraft(preset("hospital"));
       store().requestEstateAdvice({ heirs: 2, giftAmount: 150_000 });
       expect(store().activeAlerts).toEqual([]);
       expect(store().log[0]).toMatchObject({ kind: "product" });

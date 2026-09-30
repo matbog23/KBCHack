@@ -94,14 +94,16 @@ Known MCCs are in the `MCC` constant. Add new codes there rather than as strings
 ## Engine: two steps
 
 **Step 1: `signals.ts`, `recogniseTransaction(tx)`** returns the life-event *markers* one
-payment carries (gynaecology, maternity, birth-grant, childcare, hospital, notary,
-contractor). Each marker lists where the evidence came from (`mcc`, `counterparty`,
+payment carries (gynaecology, maternity, birth-grant, childcare, hospital, notary, legal,
+insurance, contractor). Each marker lists where the evidence came from (`mcc`, `counterparty`,
 `remittance`) and the matched words. `notaryPurpose(tx)` classifies notary payments as
 estate, purchase or unknown.
 
 **Step 2: `kateEngine.ts`, `evaluateKateRules(transactions, persona, { asOf })`** combines
 markers inside a lookback window with the customer's age, assets and owned products into
-alerts. `traceLifeMoments()` returns the same reasoning as data for the dashboard.
+alerts. Estate planning is a consent-gated fixed demo score (`estatePlanningScore()`,
+`ESTATE_SCORE_WEIGHTS`). `traceLifeMoments()` returns the same reasoning as data for the
+dashboard.
 
 Rules: `new-child`, `childcare-hospitalisation`, `successieplanning`, `home-purchase`,
 `renovation`. The full rule and threshold table is in [DETECTION.md](DETECTION.md).

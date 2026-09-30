@@ -33,9 +33,27 @@ export const KATE_THRESHOLDS = {
   assumedHeirs: 2,
   /** How far back a family signal still counts: a pregnancy plus the first months. */
   familyLookbackDays: 365,
-  /** Estate, home and renovation moments are about what is happening now. */
-  estateLookbackDays: 180,
+  /** Savings growth over 12 months that counts as an estate-planning signal. */
+  estatePlanningMinSavingsGrowth: 25_000,
+  /** How far back an estate payment signal still counts. */
+  estatePlanningSignalMonths: 12,
+  /** Minimum demo-score probability before Kate suggests estate planning. */
+  estatePlanningCutoff: 0.45,
+  /** Home and renovation moments are about what is happening now. */
   homeLookbackDays: 180,
+} as const;
+
+/**
+ * Fixed, hand-set weights for the estate-planning demo score. This is not a trained model:
+ * five binary inputs, a logistic squash, and a cutoff. See context/GOVERNANCE.md.
+ */
+export const ESTATE_SCORE_WEIGHTS = {
+  bias: -2.4,
+  age: 0.6,
+  assets: 0.9,
+  payment: 0.8,
+  savingsGrowth: 0.5,
+  interest: 0.9,
 } as const;
 
 /** Flemish inheritance tax, direct line (children/partner), per heir. */
@@ -252,53 +270,144 @@ const childcareRule: KateRule = ({ transactions, persona, asOf }) => {
 
 // ─── Scenario 2: planning an estate ────────────────────────────────────────────────────────
 
+export interface EstateScore {
+  inputs: {
+    age: boolean;
+    assets: boolean;
+    payment: boolean;
+    savingsGrowth: boolean;
+    interest: boolean;
+  };
+  score: number;
+  probability: number;
+  /** Booked debits in the signal window that count as estate evidence. */
+  payments: PSD2Transaction[];
+}
+
+/** Booked debits in the 12 months up to (and including) `asOf`. */
+function estatePaymentWindow(
+  transactions: readonly PSD2Transaction[],
+  asOf: ISODateTime,
+): PSD2Transaction[] {
+  const start = new Date(asOf);
+  start.setUTCMonth(start.getUTCMonth() - KATE_THRESHOLDS.estatePlanningSignalMonths);
+  return transactions.filter(
+    (tx) =>
+      tx.bookingStatus === "booked" &&
+      tx.amount < 0 &&
+      toTime(tx.bookingDate) >= start.getTime() &&
+      toTime(tx.bookingDate) <= toTime(asOf),
+  );
+}
+
+function flag(id: string, label: string, met: boolean): KateSignal {
+  return { id, label, met, evidence: [] };
+}
+
 function estateSignals(
   transactions: readonly PSD2Transaction[],
   persona: UserPersona,
   asOf: ISODateTime,
 ) {
-  const recent = within(transactions, asOf, KATE_THRESHOLDS.estateLookbackDays);
+  const recent = estatePaymentWindow(transactions, asOf);
   // A notary for a purchase is about a new home, not about passing wealth on.
   const notary = withMarker(recent, "notary").filter((tx) => notaryPurpose(tx) !== "purchase");
+  // Hospital bills are health data: they only count with separate, explicit consent.
+  const hospital = persona.healthSignalConsent ? withMarker(recent, "hospital") : [];
+  const growth =
+    persona.savingsBalance12MonthsAgo !== undefined &&
+    persona.savingsBalance - persona.savingsBalance12MonthsAgo >=
+      KATE_THRESHOLDS.estatePlanningMinSavingsGrowth;
   return {
-    hospital: signal("hospital", withMarker(recent, "hospital")),
     notary: signal("notary", notary, "Notary (estate, gift or will)"),
-    assets: {
-      id: "assets",
-      label: `Assets at KBC ≥ ${formatEuroRounded(KATE_THRESHOLDS.estatePlanningMinAssets)}`,
-      met: totalAssets(persona) >= KATE_THRESHOLDS.estatePlanningMinAssets,
-      evidence: [],
-    } satisfies KateSignal,
+    legal: signal("legal", withMarker(recent, "legal")),
+    insurance: signal("insurance", withMarker(recent, "insurance")),
+    hospital: signal("hospital", hospital, "Hospital bill (needs health consent)"),
+    age: flag(
+      "age",
+      `Age ${KATE_THRESHOLDS.estatePlanningMinAge}+`,
+      persona.age >= KATE_THRESHOLDS.estatePlanningMinAge,
+    ),
+    assets: flag(
+      "assets",
+      `Assets at KBC ≥ ${formatEuroRounded(KATE_THRESHOLDS.estatePlanningMinAssets)}`,
+      totalAssets(persona) >= KATE_THRESHOLDS.estatePlanningMinAssets,
+    ),
+    savingsGrowth: flag(
+      "savings-growth",
+      `Savings grew ≥ ${formatEuroRounded(KATE_THRESHOLDS.estatePlanningMinSavingsGrowth)} in a year`,
+      growth,
+    ),
+    interest: flag(
+      "interest",
+      "Customer declared interest",
+      persona.estatePlanningInterest === true,
+    ),
   };
 }
 
-const successieplanningRule: KateRule = ({ transactions, persona, asOf }) => {
-  if (persona.age < KATE_THRESHOLDS.estatePlanningMinAge) return null;
-  if (persona.ownedProducts.includes("estate-advice")) return null;
+/** The fixed demo score behind the estate-planning suggestion. */
+export function estatePlanningScore(
+  transactions: readonly PSD2Transaction[],
+  persona: UserPersona,
+  asOf: ISODateTime,
+): EstateScore {
   const signals = estateSignals(transactions, persona, asOf);
-  // Age and wealth alone never trigger: Kate waits for a life event in the transactions.
-  if (!signals.hospital.met && !signals.notary.met) return null;
+  const payments = [
+    ...new Set([
+      ...signals.notary.evidence,
+      ...signals.legal.evidence,
+      ...signals.insurance.evidence,
+      ...signals.hospital.evidence,
+    ]),
+  ].sort((a, b) => toTime(b.bookingDate) - toTime(a.bookingDate));
+  const inputs = {
+    age: signals.age.met,
+    assets: signals.assets.met,
+    payment: payments.length > 0,
+    savingsGrowth: signals.savingsGrowth.met,
+    interest: signals.interest.met,
+  };
+  const w = ESTATE_SCORE_WEIGHTS;
+  const score =
+    w.bias +
+    (inputs.age ? w.age : 0) +
+    (inputs.assets ? w.assets : 0) +
+    (inputs.payment ? w.payment : 0) +
+    (inputs.savingsGrowth ? w.savingsGrowth : 0) +
+    (inputs.interest ? w.interest : 0);
+  return { inputs, score, probability: 1 / (1 + Math.exp(-score)), payments };
+}
+
+const successieplanningRule: KateRule = ({ transactions, persona, asOf }) => {
+  if (!persona.estateOutreachConsent) return null;
+  if (persona.ownedProducts.includes("estate-advice")) return null;
+  const { probability, payments } = estatePlanningScore(transactions, persona, asOf);
+  if (probability < KATE_THRESHOLDS.estatePlanningCutoff) return null;
 
   const assets = totalAssets(persona);
   const heirs = KATE_THRESHOLDS.assumedHeirs;
   const estimatedTax = estimateFlemishInheritanceTax(assets, heirs);
-  const evidence = [...signals.hospital.evidence, ...signals.notary.evidence];
-  const metCount = [signals.hospital, signals.notary, signals.assets].filter((s) => s.met).length;
+  const lead = persona.estatePlanningInterest
+    ? "Je gaf aan dat je interesse hebt in successieplanning."
+    : "Successieplanning kan voor jouw situatie de moeite waard zijn.";
+  const hasPayments = payments.length > 0;
 
   return {
     id: alertId("successieplanning", persona),
     ruleId: "successieplanning",
-    triggerSource: signals.notary.met ? "PAYMENT_PATTERN" : "LIFE_STAGE",
+    triggerSource: hasPayments ? "PAYMENT_PATTERN" : "LIFE_STAGE",
     eyebrow: "Moment · Je nalatenschap",
     title: "Regel vandaag wat je later wil doorgeven.",
-    description: `Je vermogen bij KBC bedraagt ${formatEuroRounded(assets)}. Zonder planning betalen je ${heirs} kinderen later samen ongeveer ${formatEuroRounded(estimatedTax)} erfbelasting (indicatieve schatting). Met een schenking vandaag kan dat een stuk minder.`,
+    description: `${lead} Je vermogen bij KBC bedraagt ${formatEuroRounded(assets)}. Zonder planning betalen je ${heirs} kinderen later samen ongeveer ${formatEuroRounded(estimatedTax)} erfbelasting (indicatieve schatting). Met een schenking vandaag kan dat een stuk minder.`,
     ctaText: "Ja, bekijk mijn opties",
     flow: "estate-planner",
     actionType: "LAUNCH_SIMULATOR",
     productLink: "kbc://simulators/successieplanning",
     productLine: "investment",
-    priority: metCount >= 2 ? "high" : "medium",
-    ...fromEvidence(evidence),
+    priority: hasPayments ? "high" : "medium",
+    evidenceTransactionIds: payments.map((tx) => tx.transactionId),
+    detectedAt: latestBooking(payments) ?? asOf,
   };
 };
 
@@ -411,8 +520,10 @@ export function traceLifeMoments(
   const familyMet = Object.values(family).some((candidate) => candidate.met);
 
   const estate = estateSignals(transactions, persona, asOf);
-  const estateEligible = persona.age >= KATE_THRESHOLDS.estatePlanningMinAge;
-  const estateMet = estate.hospital.met || estate.notary.met;
+  const estateEligible = persona.estateOutreachConsent === true;
+  const estateMet =
+    estatePlanningScore(transactions, persona, asOf).probability >=
+    KATE_THRESHOLDS.estatePlanningCutoff;
 
   const status = (eligible: boolean, handled: boolean, met: boolean): LifeMomentStatus => {
     if (!eligible) return "not-eligible";
@@ -435,10 +546,18 @@ export function traceLifeMoments(
     {
       id: "estate",
       label: "Estate planning",
-      eligibility: { label: `Age ${KATE_THRESHOLDS.estatePlanningMinAge}+`, met: estateEligible },
-      requirement:
-        "A hospital bill or notary payment in the last 6 months; high assets raise the priority",
-      signals: [estate.hospital, estate.notary, estate.assets],
+      eligibility: { label: "Consent to estate-planning outreach", met: estateEligible },
+      requirement: `Fixed demo score over five inputs ≥ ${KATE_THRESHOLDS.estatePlanningCutoff * 100}%; a payment signal makes it high priority`,
+      signals: [
+        estate.age,
+        estate.assets,
+        estate.interest,
+        estate.savingsGrowth,
+        estate.notary,
+        estate.legal,
+        estate.insurance,
+        estate.hospital,
+      ],
       status: status(estateEligible, persona.ownedProducts.includes("estate-advice"), estateMet),
     },
   ];

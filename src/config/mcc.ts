@@ -14,6 +14,7 @@ export const MCC_OPTIONS: readonly MccOption[] = [
   { code: MCC.CHILD_CARE, label: "Child care services", isKateSignal: true },
   { code: MCC.GENERAL_CONTRACTORS, label: "General contractors", isKateSignal: true },
   { code: MCC.LEGAL_SERVICES, label: "Legal services", isKateSignal: true },
+  { code: MCC.INSURANCE, label: "Insurance", isKateSignal: true },
   { code: MCC.GROCERY, label: "Grocery stores & supermarkets", isKateSignal: false },
   { code: MCC.EATING_PLACES, label: "Restaurants", isKateSignal: false },
   { code: MCC.FUEL, label: "Service stations", isKateSignal: false },

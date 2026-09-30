@@ -160,7 +160,13 @@ function derive(inputs: SimulationInputs): DerivedState {
   const transactions = [...inputs.ingestedTransactions, ...seedTransactions].sort(
     byBookingDateDesc,
   );
-  const allAlerts = evaluateKateRules(transactions, activePersona, { asOf: DEMO_ANCHOR_DATE });
+  // Evaluate "now": the anchor date, or the latest booking if the ledger has moved past it.
+  const latestBooking = transactions[0]?.bookingDate;
+  const asOf =
+    latestBooking && Date.parse(latestBooking) > Date.parse(DEMO_ANCHOR_DATE)
+      ? latestBooking
+      : DEMO_ANCHOR_DATE;
+  const allAlerts = evaluateKateRules(transactions, activePersona, { asOf });
   const activeAlerts = allAlerts.filter((alert) => {
     const dismissedAt = inputs.dismissedAlerts[alert.id];
     return dismissedAt === undefined || Date.parse(alert.detectedAt) > Date.parse(dismissedAt);

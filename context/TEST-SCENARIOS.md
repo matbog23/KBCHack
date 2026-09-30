@@ -19,10 +19,10 @@ Every manual scenario starts from **Reset** with the named persona selected.
 | A7 | Emma | A6, then **Childcare** (direct debit) | New moment: *"Is je kleintje ook verzekerd?"* | n/a | Automated + Manual |
 | A8 | Emma | Pay **Notary · home** (€29,500, "aankoop appartement") | *"Plannen om een woning te kopen?"* | n/a | Automated + Manual |
 | A9 | Emma / Jan | Pay **Contractor** (€4,800) | *"Aan het verbouwen?"* | n/a | Automated + Manual |
-| A10 | Jan | Nothing | No push, even with €458k in assets | Estate: *Watching*, assets ✓, others open | Automated + Manual |
-| A11 | Jan | Pay **Hospital bill** (transfer to UZ Leuven) | Push *"Regel vandaag wat je later wil doorgeven."*, high priority. Text never says "ziekenhuis" | Hospital bill ✓ | Automated + Manual |
-| A12 | Jan | Pay **Notary · estate** ("testament en schenking") | Same estate moment | Notary ✓ | Automated + Manual |
-| A13 | Jan | A11, tap **Ja, bekijk mijn opties**, move heirs/gift | Tax without planning vs. with gift updates live; booking a call closes the moment | Estate: *Done* | Automated (store) + Manual (flow UI) |
+| A10 | Jan | Nothing | Push *"Regel vandaag wat je later wil doorgeven."*, **medium** (consent + declared interest + age + assets = 50%) | Estate: *Moment detected*; age, assets, interest ✓ | Automated + Manual |
+| A11 | Jan | Pay **Hospital bill** (transfer to UZ Leuven) | **No change**: Jan gave no health-signal consent | Hospital bill stays open | Automated + Manual |
+| A12 | Jan | Pay **Notary · estate**, **Lawyer** or **Life insurance** | Re-notifies at **high** priority with that payment as evidence | Payment signal ✓ | Automated + Manual |
+| A13 | Jan | A10, tap **Ja, bekijk mijn opties**, move heirs/gift | Tax without planning vs. with gift updates live; booking a call closes the moment | Estate: *Done* | Automated (store) + Manual (flow UI) |
 | A14 | Any | Tap a Kate card's **"Waarom zie ik dit?"** | Each evidence payment shows how it was paid (*Kaartbetaling / Overschrijving / Domiciliëring*) and *herkend aan „…”* | n/a | Manual · To do: component test |
 
 ## B. Detection precision (the "does it really understand?" questions)
@@ -50,7 +50,9 @@ Every manual scenario starts from **Reset** with the named persona selected.
 | # | Scenario | Expected | Status |
 |---|---|---|---|
 | C1 | Gynaecologist 360 days ago vs. 370 days ago | counts vs. ignored (12-month window) | Automated |
-| C2 | Hospital bill 175 vs. 185 days ago for Jan | counts vs. ignored (6-month window) | Automated |
+| C2 | Notary payment 400 days ago, in the future, pending, or refunded | not estate evidence (12-month window, booked debits only) | Automated |
+| C2b | Jan without outreach consent | no estate moment at all | Automated |
+| C2c | Two cases scoring 47.5% that were meant to stay silent (see `it.todo` in `kateEngine.test.ts`) | **Open decision** for the model owners | To do |
 | C3 | Family signals for a 75-year-old; estate signals for a 60-year-old | nothing | Automated |
 | C4 | Refund (money in) from childcare | not a childcare payment | Automated |
 | C5 | Dismiss a moment, then pay another signal for it | stays hidden until the new evidence, then returns | Automated |
@@ -79,7 +81,7 @@ Every manual scenario starts from **Reset** with the named persona selected.
 1. **Component tests** (needs React Testing Library + jsdom, which is a dependency change that
    needs approval): the "why" sheet renders channel + matched words (A14), and the form hides
    the MCC for transfers and the IBAN for cards.
-2. **End-to-end demo run** (Playwright): A2 → A6 and A11 → A13 click-through, with a
+2. **End-to-end demo run** (Playwright): A2 → A6 and A10 → A13 click-through, with a
    screenshot of each push, so every demo storyline has a regression check.
 3. **Precision set:** a table of 50+ realistic Belgian statement lines (real merchant naming
    patterns, French and Dutch) with the expected marker for each, run as one parameterised

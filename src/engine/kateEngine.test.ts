@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { PERSONAS } from "@/config/personas";
 import {
+  estatePlanningScore,
   estimateFlemishInheritanceTax,
   estimateTaxWithGift,
   evaluateKateRules,
   KATE_THRESHOLDS,
   traceLifeMoments,
 } from "@/engine/kateEngine";
-import { AS_OF, daysEarlier, SAMPLE, transferOut } from "@/engine/testTransactions";
+import { AS_OF, daysEarlier, directDebit, SAMPLE, transferOut } from "@/engine/testTransactions";
 import type { PSD2Transaction, UserPersona } from "@/types/psd2";
 
 const emma = PERSONAS.emma.persona;
@@ -22,9 +23,11 @@ function ruleIds(transactions: PSD2Transaction[], persona: UserPersona): string[
 }
 
 describe("seed data", () => {
-  it("raises nothing for either persona's untouched history", () => {
+  it("raises nothing for Emma, and only Jan's consented, declared-interest estate moment", () => {
     expect(evaluateKateRules(PERSONAS.emma.transactions, emma)).toEqual([]);
-    expect(evaluateKateRules(PERSONAS.jan.transactions, jan)).toEqual([]);
+    expect(evaluateKateRules(PERSONAS.jan.transactions, jan)).toEqual([
+      expect.objectContaining({ ruleId: "successieplanning", priority: "medium" }),
+    ]);
   });
 });
 
@@ -79,7 +82,7 @@ describe("scenario 1: a young mum and a new child", () => {
   it("ignores refunds and customers outside family age", () => {
     const refund = { ...SAMPLE.childcare, amount: 540, creditDebitIndicator: "CRDT" as const };
     expect(ruleIds([refund], emma)).toEqual([]);
-    expect(ruleIds([SAMPLE.childcare], jan)).toEqual([]);
+    expect(ruleIds([SAMPLE.childcare], jan)).not.toContain("new-child");
   });
 
   it("counts family signals for 12 months, not forever", () => {
@@ -89,55 +92,108 @@ describe("scenario 1: a young mum and a new child", () => {
   });
 });
 
-describe("scenario 2: an elderly customer and estate planning", () => {
-  it("age and wealth alone do not trigger anything", () => {
-    expect(ruleIds([], jan)).toEqual([]);
+describe("scenario 2: estate planning (consent + fixed demo score)", () => {
+  const lawyer = transferOut("Advocatenkantoor Peeters", "Ereloon juridisch advies", 180, {
+    transactionId: "tx-lawyer",
   });
+  const lifeInsurance = directDebit(
+    "Atlas Verzekeringen NV",
+    "Premie levensverzekering tak 21",
+    120,
+    {
+      transactionId: "tx-insurance",
+    },
+  );
 
-  it("a hospital bill for a 65+ customer raises the estate moment", () => {
-    const [alert] = evaluate([SAMPLE.hospital], jan);
-    expect(alert).toMatchObject({
+  function estate(transactions: PSD2Transaction[], persona: UserPersona) {
+    return evaluate(transactions, persona).find((alert) => alert.ruleId === "successieplanning");
+  }
+
+  it("fires for Jan on consent, age, assets and declared interest, at medium priority", () => {
+    expect(estate([], jan)).toMatchObject({
       id: "successieplanning:jan",
       flow: "estate-planner",
       triggerSource: "LIFE_STAGE",
+      priority: "medium",
+      evidenceTransactionIds: [],
+    });
+    expect(estatePlanningScore([], jan, AS_OF).probability).toBeCloseTo(0.5, 5);
+  });
+
+  it("requires outreach consent even when every signal is present", () => {
+    expect(estate([SAMPLE.notaryEstate], { ...jan, estateOutreachConsent: false })).toBeUndefined();
+  });
+
+  it("without declared interest, age and assets alone stay silent; a payment tips it", () => {
+    const noInterest = { ...jan, estatePlanningInterest: false };
+    expect(estate([], noInterest)).toBeUndefined();
+    expect(estate([SAMPLE.notaryEstate], noInterest)).toMatchObject({ priority: "high" });
+  });
+
+  it("a young customer with modest assets stays silent", () => {
+    expect(estate([], { ...jan, age: 28, savingsBalance: 40_000 })).toBeUndefined();
+  });
+
+  it("counts savings growth only with a known year-old balance", () => {
+    const persona = { ...jan, age: 64, savingsBalance12MonthsAgo: 425_000 };
+    expect(estate([], persona)).toBeDefined();
+    expect(estate([], { ...persona, savingsBalance12MonthsAgo: undefined })).toBeUndefined();
+  });
+
+  it.each([
+    ["notary about a will", SAMPLE.notaryEstate],
+    ["lawyer", lawyer],
+    ["life-insurance premium", lifeInsurance],
+  ])("a %s is a payment signal that makes it high priority", (_, payment) => {
+    expect(estate([payment], jan)).toMatchObject({
+      priority: "high",
+      triggerSource: "PAYMENT_PATTERN",
+      evidenceTransactionIds: [payment.transactionId],
+    });
+  });
+
+  it("ignores hospital bills without separate health-signal consent", () => {
+    expect(estate([SAMPLE.hospital], jan)).toMatchObject({
+      priority: "medium",
+      evidenceTransactionIds: [],
+    });
+    expect(estate([SAMPLE.hospital], { ...jan, healthSignalConsent: true })).toMatchObject({
       priority: "high",
       evidenceTransactionIds: ["tx-hospital"],
     });
-    expect(alert?.description).toMatch(/erfbelasting/);
   });
 
   it("never mentions the hospital in the customer-facing copy", () => {
-    const [alert] = evaluate([SAMPLE.hospital], jan);
+    const alert = estate([SAMPLE.hospital], { ...jan, healthSignalConsent: true });
     expect(`${alert?.title} ${alert?.description}`).not.toMatch(/ziekenhuis|hospital/i);
   });
 
-  it("a notary about a will or gift triggers it too, at lower priority without large assets", () => {
-    const modest: UserPersona = { ...jan, checkingBalance: 3_000, savingsBalance: 40_000 };
-    const [alert] = evaluate([SAMPLE.notaryEstate], modest);
-    expect(alert).toMatchObject({
-      ruleId: "successieplanning",
-      triggerSource: "PAYMENT_PATTERN",
-      priority: "medium",
-    });
+  it("a notary for a purchase is not estate evidence", () => {
+    expect(estate([SAMPLE.notaryHome], jan)?.evidenceTransactionIds).toEqual([]);
   });
 
-  it("a notary for a purchase is not an estate signal", () => {
-    expect(ruleIds([SAMPLE.notaryHome], jan)).toEqual([]);
-  });
-
-  it("stays silent under 65", () => {
-    expect(ruleIds([SAMPLE.hospital], { ...emma, age: 60 })).toEqual([]);
-  });
-
-  it("counts estate signals for 6 months", () => {
-    const days = KATE_THRESHOLDS.estateLookbackDays;
-    expect(ruleIds([daysEarlier(SAMPLE.hospital, days - 5)], jan)).toEqual(["successieplanning"]);
-    expect(ruleIds([daysEarlier(SAMPLE.hospital, days + 5)], jan)).toEqual([]);
+  it("ignores stale, future, pending and refunded payments", () => {
+    const ignored: PSD2Transaction[] = [
+      daysEarlier(SAMPLE.notaryEstate, 400),
+      daysEarlier(SAMPLE.notaryEstate, -2),
+      { ...SAMPLE.notaryEstate, bookingStatus: "pending" },
+      { ...SAMPLE.notaryEstate, amount: 250, creditDebitIndicator: "CRDT" },
+    ];
+    for (const payment of ignored) {
+      expect(estate([payment], jan)?.evidenceTransactionIds).toEqual([]);
+    }
   });
 
   it("stops once an estate conversation was requested", () => {
-    expect(ruleIds([SAMPLE.hospital], { ...jan, ownedProducts: ["estate-advice"] })).toEqual([]);
+    expect(
+      estate([SAMPLE.notaryEstate], { ...jan, ownedProducts: ["estate-advice"] }),
+    ).toBeUndefined();
   });
+
+  // Open decisions from the incoming model: both cases score -0.1 (47.5%), above the 45% cutoff,
+  // yet were meant to stay silent. A higher cutoff would break the savings-growth case above.
+  it.todo("decide: a wealthy customer under 65 with only declared interest should stay silent");
+  it.todo("decide: a notary payment alone with modest assets should stay silent");
 });
 
 describe("home purchase (notary under 65)", () => {
@@ -193,10 +249,19 @@ describe("traceLifeMoments", () => {
     expect(child?.signals.find((s) => s.id === "maternity")?.evidence).toEqual([SAMPLE.maternity]);
   });
 
-  it("shows Jan's asset signal as met before any life event", () => {
-    const [, estate] = traceLifeMoments([], jan);
-    expect(estate?.status).toBe("watching");
-    expect(estate?.signals.find((s) => s.id === "assets")?.met).toBe(true);
+  it("shows Jan's estate moment detected from age, assets and declared interest", () => {
+    const [, estate] = traceLifeMoments([], jan, { asOf: AS_OF });
+    expect(estate?.status).toBe("detected");
+    expect(estate?.signals.filter((s) => s.met).map((s) => s.id)).toEqual([
+      "age",
+      "assets",
+      "interest",
+    ]);
+  });
+
+  it("marks estate planning not applicable without outreach consent", () => {
+    const [, estate] = traceLifeMoments([], { ...jan, estateOutreachConsent: false });
+    expect(estate?.status).toBe("not-eligible");
   });
 
   it("reports handled once the product exists", () => {
