@@ -58,13 +58,24 @@ function derive(inputs: SimulationInputs): DerivedState {
     ...base,
     checkingBalance: roundCents(base.checkingBalance + monthlyCheckingDrift * months + injectedNet),
     savingsBalance: roundCents(base.savingsBalance + base.monthlySavingsContribution * months),
+    savingsBalance12MonthsAgo:
+      months === 0
+        ? base.savingsBalance12MonthsAgo
+        : months >= 12
+          ? roundCents(base.savingsBalance + base.monthlySavingsContribution * (months - 12))
+          : undefined,
   };
 
   const simulatedNow = addMonths(DEMO_ANCHOR_DATE, months);
   const transactions = [...inputs.injectedTransactions, ...seedTransactions].sort(
     byBookingDateDesc,
   );
-  const allAlerts = evaluateKateRules(transactions, activePersona, { asOf: simulatedNow });
+  const latestTransaction = transactions[0]?.bookingDate;
+  const evaluationNow =
+    latestTransaction && Date.parse(latestTransaction) > Date.parse(simulatedNow)
+      ? latestTransaction
+      : simulatedNow;
+  const allAlerts = evaluateKateRules(transactions, activePersona, { asOf: evaluationNow });
   const activeAlerts = allAlerts.filter((alert) => {
     const dismissedAt = inputs.dismissedAlerts[alert.id];
     return dismissedAt === undefined || Date.parse(alert.detectedAt) > Date.parse(dismissedAt);

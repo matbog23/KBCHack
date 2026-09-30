@@ -25,6 +25,19 @@ npm run verify     # typecheck + Biome + Vitest
 | Emma | Time machine → +9 months | Investment plan (savings exceed 6-month buffer) |
 | Jan (75) | On load (€458k assets) | Successieplanning, with indicative Flemish inheritance tax |
 | Jan | Inject Notary Van Damme (MCC 8999) | Successieplanning escalates to high priority |
+| Jan | Inject Legal services (MCC 8111) or Insurance premium (MCC 6300) | Successieplanning escalates to high priority |
+| Jan | Inject Hospital payment (MCC 8062) | No escalation without separate health-signal consent |
+
+Successieplanning uses a fixed, hand-set demo score, **not a trained ML model**. Five binary
+inputs contribute to the score: age >= 65, checking plus savings >= EUR 250,000, a booked
+legal/notary/insurance debit in the past 12 months (hospital only with explicit health-signal
+consent), savings growth >= EUR 25,000 versus a year-old balance, and customer-declared
+interest. The score is `-2.4 + 0.6*age + 0.9*assets + 0.8*payment + 0.5*growth + 0.9*interest`;
+Kate shows the suggestion when `1 / (1 + exp(-score)) >= 0.45` and estate outreach consent is
+present. Missing annual balance or interest is treated as absent, not guessed. MCCs are merchant
+categories, not bank account numbers; none of these payments proves a customer needs advice.
+Jan's initial suggestion uses his declared interest, age and assets. The calculation and
+inheritance-tax amount are indicative, and no product change is automatic.
 
 ## Layout
 

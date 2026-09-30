@@ -19,6 +19,9 @@ export type IBAN = string;
 export const MCC = {
   DOCTORS_GYNECOLOGY: "8011",
   LEGAL_NOTARY: "8999",
+  LEGAL_SERVICES: "8111",
+  INSURANCE: "6300",
+  HOSPITALS: "8062",
   CHILD_CARE: "8351",
   GENERAL_CONTRACTORS: "1520",
   GROCERY: "5411",
@@ -86,6 +89,14 @@ export interface UserPersona {
   checkingBalance: number;
   /** Current balance of the KBC savings account (spaarrekening). */
   savingsBalance: number;
+  /** Snapshot used for the optional 12-month savings growth signal. */
+  savingsBalance12MonthsAgo?: number;
+  /** Separate permission to use data for proactive estate-planning invitations. */
+  estateOutreachConsent?: boolean;
+  /** Special-category health inference is never used without explicit permission. */
+  healthSignalConsent?: boolean;
+  /** Interest explicitly registered by the customer, not inferred from transactions. */
+  estatePlanningInterest?: boolean;
   lifeStage: LifeStage;
   /** One-line description shown in the persona selector. */
   tagline: string;

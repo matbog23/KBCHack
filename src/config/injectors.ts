@@ -65,6 +65,39 @@ export const TRANSACTION_INJECTORS: readonly TransactionInjector[] = [
     },
   },
   {
+    id: "legal",
+    label: "Legal services",
+    storyline: "estate",
+    template: {
+      amount: -180,
+      creditorName: "Legal advice office",
+      remittanceInformationUnstructured: "Legal consultation",
+      merchantCategoryCode: MCC.LEGAL_SERVICES,
+    },
+  },
+  {
+    id: "insurance",
+    label: "Insurance premium",
+    storyline: "estate",
+    template: {
+      amount: -120,
+      creditorName: "Insurance provider",
+      remittanceInformationUnstructured: "Insurance premium",
+      merchantCategoryCode: MCC.INSURANCE,
+    },
+  },
+  {
+    id: "hospital",
+    label: "Hospital payment (health consent required)",
+    storyline: "estate",
+    template: {
+      amount: -90,
+      creditorName: "Hospital",
+      remittanceInformationUnstructured: "Hospital invoice",
+      merchantCategoryCode: MCC.HOSPITALS,
+    },
+  },
+  {
     id: "contractor",
     label: "Bouwbedrijf Maes Renovations",
     storyline: "home",

@@ -67,6 +67,28 @@ describe("useKbcStore", () => {
     expect(resurfaced).toMatchObject({ ruleId: "successieplanning", priority: "high" });
   });
 
+  it("legal and insurance payments escalate Jan's alert, but hospital payments need consent", () => {
+    useKbcStore.getState().setPersona("jan");
+    useKbcStore.getState().injectTransaction(injector("hospital"));
+    expect(useKbcStore.getState().activeAlerts[0]).toMatchObject({
+      ruleId: "successieplanning",
+      priority: "medium",
+      evidenceTransactionIds: [],
+    });
+
+    const legal = useKbcStore.getState().injectTransaction(injector("legal"));
+    expect(useKbcStore.getState().activeAlerts[0]).toMatchObject({
+      priority: "high",
+      evidenceTransactionIds: [legal.transactionId],
+    });
+
+    const insurance = useKbcStore.getState().injectTransaction(injector("insurance"));
+    expect(useKbcStore.getState().activeAlerts[0]?.evidenceTransactionIds).toEqual([
+      insurance.transactionId,
+      legal.transactionId,
+    ]);
+  });
+
   it("switching persona resets injected transactions and the clock", () => {
     useKbcStore.getState().injectTransaction(injector("gynecology"));
     useKbcStore.getState().simulateTimeJump(6);

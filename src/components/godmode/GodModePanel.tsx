@@ -6,9 +6,11 @@ import {
   Clock,
   Cpu,
   HardHat,
+  HeartPulse,
   type LucideIcon,
   RotateCcw,
   Scale,
+  Shield,
   Stethoscope,
   UserRound,
   Zap,
@@ -37,6 +39,9 @@ const INJECTOR_ICONS: Record<string, LucideIcon> = {
   kraamgeld: Baby,
   childcare: Baby,
   notary: Scale,
+  legal: Scale,
+  insurance: Shield,
+  hospital: HeartPulse,
   contractor: HardHat,
 };
 

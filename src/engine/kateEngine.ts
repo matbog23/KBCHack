@@ -18,6 +18,9 @@ export const KATE_THRESHOLDS = {
   estatePlanningMinAge: 65,
   /** Total assets from which estate planning is raised without any other signal. */
   estatePlanningMinAssets: 250_000,
+  estatePlanningMinSavingsGrowth: 25_000,
+  estatePlanningSignalMonths: 12,
+  estatePlanningCutoff: 0.45,
   /** Months of fixed costs a customer should keep liquid before investing. */
   safetyBufferMonths: 6,
   /** Savings above the safety buffer that justify an investment conversation. */
@@ -219,31 +222,54 @@ const renovationRule: KateRule = ({ transactions, persona }) => {
 };
 
 const successieplanningRule: KateRule = ({ transactions, persona, asOf }) => {
-  if (persona.age < KATE_THRESHOLDS.estatePlanningMinAge) return null;
+  if (!persona.estateOutreachConsent) return null;
   const totalAssets = persona.checkingBalance + persona.savingsBalance;
-  const notaryFees = debitsWithMcc(transactions, MCC.LEGAL_NOTARY);
-  const hasNotarySignal = notaryFees.length > 0;
-  if (!hasNotarySignal && totalAssets < KATE_THRESHOLDS.estatePlanningMinAssets) return null;
+  const signalStart = new Date(asOf);
+  signalStart.setUTCMonth(signalStart.getUTCMonth() - KATE_THRESHOLDS.estatePlanningSignalMonths);
+  const relevantPayments = transactions.filter(
+    (transaction) =>
+      transaction.bookingStatus === "booked" &&
+      transaction.amount < 0 &&
+      toTime(transaction.bookingDate) >= signalStart.getTime() &&
+      toTime(transaction.bookingDate) <= toTime(asOf) &&
+      (transaction.merchantCategoryCode === MCC.LEGAL_NOTARY ||
+        transaction.merchantCategoryCode === MCC.LEGAL_SERVICES ||
+        transaction.merchantCategoryCode === MCC.INSURANCE ||
+        (persona.healthSignalConsent && transaction.merchantCategoryCode === MCC.HOSPITALS)),
+  );
+  const score =
+    -2.4 +
+    (persona.age >= KATE_THRESHOLDS.estatePlanningMinAge ? 0.6 : 0) +
+    (totalAssets >= KATE_THRESHOLDS.estatePlanningMinAssets ? 0.9 : 0) +
+    (relevantPayments.length > 0 ? 0.8 : 0) +
+    (persona.savingsBalance12MonthsAgo !== undefined &&
+    persona.savingsBalance - persona.savingsBalance12MonthsAgo >=
+      KATE_THRESHOLDS.estatePlanningMinSavingsGrowth
+      ? 0.5
+      : 0) +
+    (persona.estatePlanningInterest ? 0.9 : 0);
+  const probability = 1 / (1 + Math.exp(-score));
+  if (probability < KATE_THRESHOLDS.estatePlanningCutoff) return null;
 
   const heirs = KATE_THRESHOLDS.assumedHeirs;
   const estimatedTax = estimateFlemishInheritanceTax(totalAssets, heirs);
-  const lead = hasNotarySignal
-    ? "Kate saw you visited a notary."
-    : `Your assets at KBC total ${formatEuroRounded(totalAssets)}.`;
+  const lead = persona.estatePlanningInterest
+    ? "You expressed an interest in estate planning."
+    : "Estate planning may be worth exploring for your situation.";
 
   return {
     id: alertId("successieplanning", persona),
     ruleId: "successieplanning",
-    triggerSource: hasNotarySignal ? "MCC_PATTERN" : "LIFE_STAGE",
+    triggerSource: relevantPayments.length > 0 ? "MCC_PATTERN" : "LIFE_STAGE",
     title: "Plan your estate, protect your heirs",
     description: `${lead} Without planning, ${heirs} children could owe about ${formatEuroRounded(estimatedTax)} in Flemish inheritance tax (indicative estimate). See how gifts and estate planning could reduce that.`,
     ctaText: "Launch estate tax simulator",
     actionType: "LAUNCH_SIMULATOR",
     productLink: "kbc://simulators/successieplanning",
     productLine: "investment",
-    priority: hasNotarySignal ? "high" : "medium",
-    evidenceTransactionIds: notaryFees.map((transaction) => transaction.transactionId),
-    detectedAt: hasNotarySignal ? (latestBooking(notaryFees) ?? asOf) : asOf,
+    priority: relevantPayments.length > 0 ? "high" : "medium",
+    evidenceTransactionIds: relevantPayments.map((transaction) => transaction.transactionId),
+    detectedAt: relevantPayments.length > 0 ? (latestBooking(relevantPayments) ?? asOf) : asOf,
   };
 };
 

@@ -98,7 +98,7 @@ describe("evaluateKateRules", () => {
     });
   });
 
-  describe("Successieplanning (age 65+)", () => {
+  describe("Successieplanning (five fixed signals)", () => {
     it("generates the Successieplanning alert for a 65+ customer with a high balance", () => {
       const alerts = evaluateKateRules([], jan, { asOf: "2026-09-30T09:00:00+02:00" });
       const estate = alerts.find((alert) => alert.ruleId === "successieplanning");
@@ -114,7 +114,7 @@ describe("evaluateKateRules", () => {
       });
     });
 
-    it("fires exactly at the age and asset thresholds", () => {
+    it("uses the age and asset thresholds as two of the five signals", () => {
       const borderline: UserPersona = {
         ...jan,
         age: KATE_THRESHOLDS.estatePlanningMinAge,
@@ -124,14 +124,37 @@ describe("evaluateKateRules", () => {
       expect(ruleIds([], borderline)).toContain("successieplanning");
     });
 
-    it("stays silent for a 65+ customer with modest assets and no notary visit", () => {
+    it("stays silent for a 65+ customer with modest assets and no payment signal", () => {
       const modest: UserPersona = { ...jan, checkingBalance: 3_000, savingsBalance: 40_000 };
       expect(ruleIds([], modest)).not.toContain("successieplanning");
     });
 
-    it("stays silent for a wealthy customer under 65", () => {
-      const wealthyYoung: UserPersona = { ...emma, savingsBalance: 900_000 };
+    it("stays silent for a wealthy customer under 65 with only declared interest", () => {
+      const wealthyYoung: UserPersona = { ...jan, age: 28, savingsBalance: 900_000 };
       expect(ruleIds([], wealthyYoung)).not.toContain("successieplanning");
+    });
+
+    it("requires outreach consent even when all five signals are present", () => {
+      expect(ruleIds([notaryFee], { ...jan, estateOutreachConsent: false })).not.toContain(
+        "successieplanning",
+      );
+    });
+
+    it("does not treat the fixed demo score as a trained model or an age-only gate", () => {
+      const noInterest = { ...jan, estatePlanningInterest: false };
+      expect(ruleIds([], noInterest)).not.toContain("successieplanning");
+      expect(ruleIds([notaryFee], noInterest)).toContain("successieplanning");
+      expect(ruleIds([], { ...jan, age: 28, savingsBalance: 40_000 })).not.toContain(
+        "successieplanning",
+      );
+    });
+
+    it("counts savings growth only with a known year-old balance", () => {
+      const persona = { ...jan, age: 64, savingsBalance12MonthsAgo: 425_000 };
+      expect(ruleIds([], persona)).toContain("successieplanning");
+      expect(ruleIds([], { ...persona, savingsBalance12MonthsAgo: undefined })).not.toContain(
+        "successieplanning",
+      );
     });
 
     it("escalates to high priority and cites the notary once a notary is paid", () => {
@@ -146,9 +169,50 @@ describe("evaluateKateRules", () => {
       });
     });
 
-    it("fires on a notary visit alone, even with modest assets", () => {
+    it("does not fire on a notary visit alone with modest assets", () => {
       const modest: UserPersona = { ...jan, checkingBalance: 3_000, savingsBalance: 40_000 };
-      expect(ruleIds([notaryFee], modest)).toContain("successieplanning");
+      expect(ruleIds([notaryFee], modest)).not.toContain("successieplanning");
+    });
+
+    it.each([MCC.LEGAL_NOTARY, MCC.LEGAL_SERVICES, MCC.INSURANCE])(
+      "counts a recent booked debit with MCC %s as a transaction signal",
+      (merchantCategoryCode) => {
+        const payment = { ...notaryFee, merchantCategoryCode };
+        const alerts = evaluateKateRules([payment], jan);
+        expect(alerts.find((alert) => alert.ruleId === "successieplanning")).toMatchObject({
+          priority: "high",
+          triggerSource: "MCC_PATTERN",
+          evidenceTransactionIds: ["tx-notary"],
+        });
+      },
+    );
+
+    it("ignores hospital payments without separate health-signal consent", () => {
+      const hospital = { ...notaryFee, merchantCategoryCode: MCC.HOSPITALS };
+      expect(evaluateKateRules([hospital], jan).find((alert) => alert.ruleId === "successieplanning"))
+        .toMatchObject({ priority: "medium", evidenceTransactionIds: [] });
+      expect(
+        evaluateKateRules([hospital], { ...jan, healthSignalConsent: true }).find(
+          (alert) => alert.ruleId === "successieplanning",
+        ),
+      ).toMatchObject({ priority: "high", evidenceTransactionIds: ["tx-notary"] });
+    });
+
+    it("ignores future, stale, pending and refunded payments", () => {
+      const asOf = "2026-10-02T10:00:00+02:00";
+      const ignored = [
+        { ...notaryFee, bookingDate: "2025-09-01T10:00:00+02:00" },
+        { ...notaryFee, bookingDate: "2026-10-03T10:00:00+02:00" },
+        { ...notaryFee, bookingStatus: "pending" as const },
+        { ...notaryFee, amount: 250, creditDebitIndicator: "CRDT" as const },
+      ];
+      for (const payment of ignored) {
+        expect(
+          evaluateKateRules([payment], jan, { asOf }).find(
+            (alert) => alert.ruleId === "successieplanning",
+          ),
+        ).toMatchObject({ priority: "medium", evidenceTransactionIds: [] });
+      }
     });
 
     it("routes a younger customer's notary visit to the home-loan simulator instead", () => {
