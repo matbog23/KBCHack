@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans:
+      "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+
+    /* shadcn/ui tokens mapped onto the KBC palette (HSL channels). */
+    --background: 210 20% 96%; /* #F4F6F8 */
+    --foreground: 213 100% 19%; /* #002D62 */
+    --card: 0 0% 100%;
+    --card-foreground: 213 100% 19%;
+    --primary: 196 100% 44%; /* #00A3E0 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 213 100% 19%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 213 16% 43%;
+    --accent: 196 76% 94%;
+    --accent-foreground: 196 100% 35%; /* #0082B3 */
+    --destructive: 350 75% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 212 22% 91%;
+    --input: 212 22% 91%;
+    --ring: 196 100% 44%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-kbc-gray font-sans text-kbc-navy antialiased;
+    font-feature-settings: "tnum" 1;
+  }
+}
+
+@layer utilities {
+  /* Scrollable but chrome-less, like a native mobile view. */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
