@@ -24,7 +24,7 @@
 <!-- To embed the video: open this README in GitHub's web editor, drag demo.mp4 in on the line below,
      and GitHub turns it into a https://github.com/user-attachments/assets/... link that plays inline. -->
 
-https://github.com/user-attachments/assets/REPLACE-WITH-VIDEO-ID
+[Netlify Demo](https://kbchack.netlify.app)
 
 <details>
 <summary><b>🧭 What you see in the demo (3-column dashboard)</b></summary>
@@ -311,17 +311,6 @@ context/          # Product, architecture, detection, governance, security, test
 ```
 
 </details>
-
----
-
-## 👥 Team
-
-| | Name | Role | LinkedIn |
-|---|---|---|---|
-| 🧑‍💻 | Mathieu Boogaerts | *Role* | [LinkedIn](https://www.linkedin.com/in/REPLACE) |
-| 🧑‍💻 | *Name* | *Role* | [LinkedIn](https://www.linkedin.com/in/REPLACE) |
-| 🧑‍💻 | *Name* | *Role* | [LinkedIn](https://www.linkedin.com/in/REPLACE) |
-| 🧑‍💻 | *Name* | *Role* | [LinkedIn](https://www.linkedin.com/in/REPLACE) |
 
 ---
 
