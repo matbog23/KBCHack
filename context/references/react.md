@@ -24,7 +24,7 @@
    `forwardRef`. (The shadcn primitives in `components/ui/` are generated and may still use
    it. Leave them as they are.)
 6. **Accessibility:** use landmarks with `aria-label` (as the panes do), `aria-hidden` on
-   decorative icons, and real `<button>` elements for actions. The Kate slide-down must be
+   decorative icons, and real `<button>` elements for actions. The Kate push and sheet must be
    dismissible with a keyboard.
 
 ---
@@ -60,11 +60,11 @@ export function KateInsightList() {
 ## Gotchas LLMs get wrong in this repo
 
 - **Key by stable ids:** `transaction.transactionId` and `alert.id`. Never use the array
-  index. The lists reorder when you inject transactions or jump in time.
+  index. The lists reorder when a new payment is booked.
 - **Don't mirror store state in `useState` + `useEffect`.** Read it with a selector. Copying
   it causes stale UI after a persona switch.
 - **Animations keyed on `alert.id`** re-run only for new alerts. Key them on something else
-  and the slide-down replays on every store update.
+  and the push replays on every store update.
 - **Context is rendered as `<Context value={…}>`** (no `.Provider`) in React 19, if you ever
   need it.
 - **`useOptimistic` / `useActionState`** have no use here, because there are no async

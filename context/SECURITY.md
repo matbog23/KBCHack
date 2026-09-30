@@ -18,16 +18,19 @@ version would have to respect so the demo never shows a pattern a bank couldn't 
 - **No telemetry on payment data.** Don't send transactions, alerts or persona data to
   analytics, error trackers or logging services. Don't `console.log` transaction payloads
   in committed code.
-- **No external AI or enrichment services** in the detection path. MCC classification and
+- **No external AI or enrichment services** in the detection path. Payment recognition and
   rules run locally.
 
 ## GDPR and banking principles to model
 
 Kate's UX and rules should be defensible under these, even in a demo:
 
-- **Lawful basis and purpose limitation (GDPR Art. 5–6).** Payment data obtained through
-  PSD2 is processed to provide the payment service. Using it for proactive product offers
-  needs a separate basis (typically explicit opt-in consent) and must match the purpose
+- **Data source.** Kate reads KBC's *own* customers' transactions. KBC processes them to run
+  the account. Data from other banks' accounts that a customer links via PSD2 may only be
+  used for the service the customer explicitly requested (PSD2 Art. 67(2)(f)), so it must
+  never feed product nudges.
+- **Lawful basis and purpose limitation (GDPR Art. 5–6).** Using payment data for proactive
+  product offers needs its own basis (typically explicit opt-in consent) and must match the purpose
   stated to the customer.
 - **Special category data (GDPR Art. 9).** A gynaecology payment (MCC `8011`) can reveal
   **health** data such as a pregnancy. Treat inferences from medical MCCs as special
@@ -58,7 +61,8 @@ and never expose secrets through `NEXT_PUBLIC_*`.
 - Never commit secrets, tokens or API keys.
 - Never log personal or payment data (names, IBANs, amounts, remittance text) outside the
   in-memory demo UI.
-- Validate God Mode input at the store boundary (sign ↔ CDI, known persona, clamped time).
+- Validate every payload at the boundary (`parseBerlinGroupPayload`): amount format, EUR only,
+  IBAN checksum, sign ↔ CDI, no duplicate ids.
 - Never show stack traces or internal errors in the customer pane.
 - Don't use real KBC credentials, logos or production URLs beyond the brand colours. CTAs
   are placeholder `kbc://` deep links.

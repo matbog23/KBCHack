@@ -14,8 +14,8 @@ Follow the existing `src/` code. Use one casing per kind and never mix casings w
 
 | Kind | Convention | Example |
 |------|-----------|---------|
-| Folders | lowercase | `engine/`, `godmode/`, `components/ui/` |
-| React component files | PascalCase, matching the component | `KateInterceptor.tsx`, `GodModePanel.tsx` |
+| Folders | lowercase | `engine/`, `emulator/`, `components/ui/` |
+| React component files | PascalCase, matching the component | `KateSheet.tsx`, `TransactionComposer.tsx` |
 | Hook / store files | camelCase with a `use` prefix | `useKbcStore.ts` |
 | Other modules | camelCase | `kateEngine.ts`, `format.ts`, `psd2.ts` |
 | shadcn/ui primitives | kebab-case, as generated | `components/ui/button.tsx` |
@@ -79,7 +79,7 @@ npm run format      # biome format --write .
   Zustand, `config/` and wall-clock time stay out of it.
 - **Keep the store thin.** Actions compute new `SimulationInputs` and call `withDerived()`.
   Business rules belong in the engine, not in store actions or components.
-- **Keep config static.** Personas, seed transactions and injectors are data only, with no
+- **Keep config static.** Personas, seed transactions and presets are data only, with no
   logic beyond small builders like `seed()`.
 - **Comments explain *why*.** Use JSDoc on exported types and fields that carry domain
   meaning (sign conventions, Berlin Group semantics). Don't narrate obvious code.
@@ -88,7 +88,7 @@ npm run format      # biome format --write .
 
 - Branch off `main`. Use short-lived branches named `feat/…`, `fix/…`, `chore/…`, `docs/…`.
 - Commit messages are imperative and scoped, following Conventional Commits:
-  `feat(engine): add renovation rule`, `fix(store): clamp time jump`,
+  `feat(engine): add renovation rule`, `fix(psd2): validate IBAN checksum`,
   `docs(context): describe PSD2 model`.
 - One logical change per commit. Keep generated or lock-file churn in its own commit
   where practical.

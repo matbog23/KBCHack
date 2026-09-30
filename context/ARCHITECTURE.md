@@ -1,132 +1,152 @@
 # Architecture
 
-Single Next.js 15 (App Router) app. There is no backend. The "bank" is an in-memory Zustand
-store that feeds a pure rule engine. Product context: [PRODUCT.md](PRODUCT.md).
+A single Next.js 15 (App Router) app with no backend. The "bank" is an in-memory Zustand store
+that books transactions and feeds a pure, two-step rule engine. Product context is in
+[PRODUCT.md](PRODUCT.md). How Kate interprets payments is in [DETECTION.md](DETECTION.md).
 
 ## Layout
 
 ```
 src/
-├── app/                 # Next.js App Router: layout.tsx, page.tsx (dual-pane shell), globals.css
+├── app/                 # layout.tsx, page.tsx (three-column dashboard), globals.css
 ├── components/
-│   ├── mobile/          # Left pane: PhoneFrame, MobileApp, KbcTopBar, TransactionFeed, KateInterceptor
-│   ├── godmode/         # Right pane: GodModePanel (persona, injectors, time jump, inspector, reset)
-│   └── ui/              # shadcn/ui primitives (button, card, badge, slider)
-├── config/              # Static demo data: personas.ts (seed accounts + history), injectors.ts
-├── engine/              # kateEngine.ts: pure rules, no React, no Zustand
-├── store/               # useKbcStore.ts: simulated PSD2 account + derived state
-├── lib/                 # format.ts (nl-BE money/dates, addMonths), utils.ts (cn)
+│   ├── emulator/        # TransactionComposer (form + raw JSON), PersonaSwitch, KateReasoning
+│   ├── phone/           # KBC Mobile home screen (from Figma): header, cash overview, accounts &
+│   │   │                #   payments, "Voor jou" Kate cards, push notification, Kate sheet
+│   │   └── flows/       # ChildAccountFlow, EstatePlannerFlow (full-screen in-app flows)
+│   └── ui/              # shadcn/ui primitives (button, card)
+├── config/              # static demo data: personas.ts, presets.ts (example payments), mcc.ts
+├── psd2/                # berlinGroup.ts: payload types, form → payload builder, parser/validator
+├── engine/              # signals.ts (step 1) + kateEngine.ts (step 2): pure, no React/Zustand
+├── store/               # useKbcStore.ts: the simulated current account + derived state
+├── lib/                 # format.ts (nl-BE money/dates), iban.ts (mod-97), utils.ts (cn)
 └── types/               # psd2.ts: domain model (transactions, personas, alerts, MCCs)
 ```
+
+`page.tsx` shows three columns (stacked below `xl`): **New transaction** (composer),
+**How Kate decides** (reasoning trace), and the **phone**.
 
 ## Data flow
 
 ```
-God Mode action ──► useKbcStore action ──► SimulationInputs ──► derive() ──► DerivedState ──► phone UI
- (inject / time jump /                    (personaId, monthsElapsed,         │
-  switch persona / dismiss)                injectedTransactions,             └─ evaluateKateRules(...)
-                                           dismissedAlerts)
+form draft ─► buildBerlinGroupTransaction ─► JSON round-trip ─┐
+raw JSON  ────────────────────────────────────────────────────┴► parseBerlinGroupPayload
+                                                                   │ validate, map to PSD2Transaction
+                                                                   ▼
+                                               useKbcStore.ingestPayload ─► derive()
+                                                                   │  balances, merged feed,
+                                                                   │  evaluateKateRules(…)
+                                                                   ▼
+                                  phone (push, Kate card, sheet) + KateReasoning (trace, log)
 ```
 
-1. `page.tsx` is a Server Component. It renders `<MobileApp />` and `<GodModePanel />`
-   side by side (stacked below `lg`).
-2. Both panes are Client Components reading **one store**, `useKbcStore`. They never talk
-   to each other directly.
-3. Every action rebuilds the **minimal inputs** (`SimulationInputs`) and calls
-   `withDerived()`, which recomputes everything else: the projected balances, the merged and
-   sorted transaction list, `allAlerts`, `activeAlerts` and `simulatedNow`.
-4. Derived state is **never mutated directly**. If a value can be computed from the inputs,
-   compute it in `derive()`. Don't store it separately.
+1. The form and the raw JSON tab take **the same path**. A form draft is built into a
+   payload, serialised and parsed back, so nothing in the form bypasses validation.
+2. The store keeps only **inputs** (`SimulationInputs`). Everything else is recomputed by
+   `derive()` after each action.
+3. The engine is re-run over the **whole** history each time. A moment is pushed to the phone
+   only when its signature (rule, evidence, priority) is new.
 
-## PSD2 transaction model
+## The payload (what a bank would really have)
 
-`src/types/psd2.ts` is the source of truth. Field names follow the **Berlin Group
-NextGenPSD2** `transactionDetails` object, flattened:
+`src/psd2/berlinGroup.ts` models one booked entry on a current account in the Berlin Group
+NextGenPSD2 AIS shape (`GET /v1/accounts/{id}/transactions`, v1.3.x):
+
+| Field | Notes |
+|---|---|
+| `transactionId`, `entryReference` | ids |
+| `bookingDate`, `valueDate` | ISO **date** only (`YYYY-MM-DD`) |
+| `transactionAmount` | `{ currency: "EUR", amount: "-65.00" }`: a signed **string** |
+| `creditorName` / `creditorAccount.iban` | payee (for credits: the account holder) |
+| `debtorName` / `debtorAccount.iban` | payer on credits |
+| `remittanceInformationUnstructured` | the *mededeling*, ≤ 140 chars |
+| `bankTransactionCode` | ISO 20022: `PMNT-CCRD-POSD` card, `PMNT-ICDT-ESCT` transfer out, `PMNT-ICDT-STDO` standing order, `PMNT-RDDT-ESDD` direct debit, `PMNT-RCDT-ESCT` transfer in |
+| `kbcCardDetails.merchantCategoryCode` | **KBC extension, card payments only**, see below |
+
+**Why the MCC sits in an extension.** Berlin Group account transactions have no MCC field.
+The spec defines `merchantCategoryCode` only on its separate card-account transactions.
+KBC does know the MCC of every card payment made with a card it issued, because the card
+scheme sends it. We attach it under `kbcCardDetails`, so the rest stays standard and a
+plain Berlin Group transaction (e.g. from another bank) still parses. The parser **rejects**
+a top-level `merchantCategoryCode`, because no real feed would contain one.
+
+Parser rules: EUR only; a debit needs a `creditorName` and a credit needs a `debtorName`;
+IBANs must pass mod-97 (`lib/iban.ts`); the whole payload is rejected if one entry is invalid;
+only `transactions.booked` is read, because pending card authorisations can still be
+reversed.
+
+## Engine model (`src/types/psd2.ts`)
+
+`PSD2Transaction` is the parser's output. The engine never sees wire JSON:
 
 | Field | Type | Notes |
-|-------|------|-------|
-| `transactionId` | `string` | Seed: `emma-0001`; injected: `sim-<persona>-0001` |
-| `bookingDate`, `valueDate` | `ISODateTime` | ISO 8601 with offset |
-| `bookingStatus` | `"booked" \| "pending"` | |
-| `amount` | `number` | **Signed major units**: negative means debit, positive means credit |
-| `currency` | `"EUR"` | ISO 4217. The demo is EUR only |
-| `creditDebitIndicator` | `"CRDT" \| "DBIT"` | Must agree with the sign of `amount` |
-| `creditorName` / `creditorIban` | `string` / `IBAN?` | Payee. For credits, the account holder |
-| `debtorName` / `debtorIban` | optional | Payer on credits (e.g. `FONS Groeipakket`) |
-| `remittanceInformationUnstructured` | `string` | Free-text *mededeling*. Rules may regex-match it |
-| `merchantCategoryCode` | `MerchantCategoryCode?` | ISO 18245. Absent on plain SEPA transfers |
-| `isSimulated` | `boolean?` | `true` when injected via God Mode |
+|---|---|---|
+| `amount` | `number` | signed euros: negative = debit |
+| `creditDebitIndicator` | `"CRDT" \| "DBIT"` | derived from the sign |
+| `channel` | `"card" \| "transfer" \| "direct-debit"` | derived from `kbcCardDetails` / bank transaction code |
+| `merchantCategoryCode?` | `string` | set **only** when `channel === "card"` |
+| `creditorName`, `creditorIban?`, `debtorName?`, `debtorIban?` | | IBANs formatted in groups of four |
+| `remittanceInformationUnstructured` | `string` | card payments get a generated statement line |
+| `bookingDate` | `ISODateTime` | booking date plus the arrival time, so the feed stays ordered |
 
-**MCCs** live in the `MCC` constant. The ones that trigger rules are `8011` (doctors /
-gynaecology), `8351` (child care), `8999` (legal / notary) and `1520` (general contractors).
-The rest are background spend used in seed data. `MerchantCategoryCode` accepts any string
-but still autocompletes the known codes. Add new codes to `MCC` rather than hard-coding
-strings.
+Known MCCs are in the `MCC` constant. Add new codes there rather than as strings.
 
-**Money** is a JS `number` in euros. Round to cents only at derivation boundaries
-(`roundCents`). Format only through `src/lib/format.ts` (`nl-BE`, `Europe/Brussels`).
+## Engine: two steps
 
-## Rule engine (`src/engine/kateEngine.ts`)
+**Step 1: `signals.ts`, `recogniseTransaction(tx)`** returns the life-event *markers* one
+payment carries (gynaecology, maternity, birth-grant, childcare, hospital, notary,
+contractor). Each marker lists where the evidence came from (`mcc`, `counterparty`,
+`remittance`) and the matched words. `notaryPurpose(tx)` classifies notary payments as
+estate, purchase or unknown.
 
-- The entry point is `evaluateKateRules(transactions, persona, { asOf })`, which returns
-  `KateAlert[]`.
-- It is **pure and deterministic**: no `Date.now()`, no randomness, no I/O, and no imports
-  from React, Zustand or `config/`. The same input always gives the same alerts in the same
-  order.
-- Each rule is a `KateRule = (ctx: RuleContext) => KateAlert | null` registered in
-  `KATE_RULES`. To add a rule, write the function, append it to `KATE_RULES`, extend the
-  `KateRuleId` union, and add tests.
-- Thresholds live in `KATE_THRESHOLDS` (exported so tests and God Mode can reference them).
-  Never inline a magic number in a rule.
-- Alert `id` = `${ruleId}:${personaId}`. It is stable, so a rule raises at most one alert per
-  persona.
-- `evidenceTransactionIds` + `detectedAt` explain every alert. MCC and credit rules use the
-  latest evidence booking. Balance and life-stage rules use `asOf`.
-- Sort order: newest `detectedAt` first, then priority (`high` > `medium` > `low`), then id.
+**Step 2: `kateEngine.ts`, `evaluateKateRules(transactions, persona, { asOf })`** combines
+markers inside a lookback window with the customer's age, assets and owned products into
+alerts. `traceLifeMoments()` returns the same reasoning as data for the dashboard.
 
-| Rule | Trigger | Gate | Product |
-|------|---------|------|---------|
-| `pamperrekening` | debit MCC `8011` | age 18–50 | Pamperrekening |
-| `groeipakket-kraamgeld` | credit matching `/kraamgeld\|groeipakket\|geboortepremie/` | none | Child savings |
-| `childcare-hospitalisation` | debit MCC `8351` | age 18–50 | Hospitalisation insurance |
-| `home-purchase` | debit MCC `8999` | age < 65 | Home-loan simulator |
-| `renovation` | debit MCC `1520` ≥ €1,000 | none | Home cover / green loan |
-| `successieplanning` | MCC `8999` **or** assets ≥ €250k | age ≥ 65 | Inheritance Tax Simulator |
-| `idle-savings-invest` | savings − 6 × fixed costs ≥ €2,500 | age < 65 | Investment plan |
+Rules: `new-child`, `childcare-hospitalisation`, `successieplanning`, `home-purchase`,
+`renovation`. The full rule and threshold table is in [DETECTION.md](DETECTION.md).
 
-`estimateFlemishInheritanceTax()` applies the Flemish direct-line brackets
-(3% / 9% / 27% per heir share). The result is indicative only.
+Engine invariants:
+
+- **Pure and deterministic.** No `Date.now()`, randomness or I/O, and no imports from React,
+  Zustand or `config/`. `asOf` defaults to the latest booking.
+- **Thresholds are named constants** (`KATE_THRESHOLDS`, `SIGNAL_THRESHOLDS`). Never inline
+  a number in a rule.
+- **Rules read markers, not raw fields.** To add a signal, add a `MarkerDefinition` in
+  `signals.ts`. To add a moment, add a rule to `KATE_RULES`, extend `KateRuleId`, and add
+  tests.
+- Alert `id` = `${ruleId}:${personaId}` (at most one per rule per persona).
+  `evidenceTransactionIds` plus `detectedAt` (latest evidence) explain every alert.
+- Sort: newest evidence first, then priority, then id.
 
 ## Store (`src/store/useKbcStore.ts`)
 
-- **Inputs:** `personaId`, `monthsElapsed` (0–`MAX_TIME_JUMP_MONTHS` = 36),
-  `injectedTransactions`, and `dismissedAlerts` (alert id → the `detectedAt` at dismissal).
-- **Actions:** `setPersona` (resets the simulation), `injectTransaction(template)`,
-  `simulateTimeJump(months)` (absolute from the anchor, clamped), `dismissAlert(id)`,
-  `resetSimulation()`.
-- **Clock:** `simulatedNow = DEMO_ANCHOR_DATE + monthsElapsed`. Each injection is booked
-  `sequence × 1 min` after `simulatedNow`, so the feed order is deterministic.
-- **Balances:** checking = base + (income − fixed costs − savings contribution) × months +
-  net injected amount. Savings = base + contribution × months.
-- **Dismissal:** an alert stays hidden until newer evidence arrives (a later `detectedAt`),
-  and then it comes back.
-- **God Mode injectors** (`config/injectors.ts`) supply only a `TransactionTemplate`
-  (amount, names, remittance, MCC). The store fills in the id, dates, status, currency and
-  CDI. For credits it also sets the creditor to the active persona.
+- **Inputs:** `personaId`, `ingestedTransactions`, `dismissedAlerts` (id → `detectedAt` at
+  dismissal), `kateAccounts` (opened through Kate), `estateAdvice`.
+- **Derived:** `activePersona` (checking = seed balance + booked net − money moved to Kate
+  accounts; `ownedProducts` includes products opened through Kate), `transactions`
+  (seed + booked, newest first), `allAlerts`, `activeAlerts`, `kateAccountBalances`,
+  `simulatedNow` (= `DEMO_ANCHOR_DATE`, fixed).
+- **Session:** `sequence` (ids and booking minutes), `lastPayload`, `notification`, `log`
+  (last 40 events: ingested, rejected, persona, product).
+- **Actions:** `setPersona`, `submitDraft`, `ingestPayload`, `dismissAlert`,
+  `openChildAccount`, `requestEstateAdvice`, `clearNotification`, `resetSimulation`.
+- Each booking is dated one simulated minute after the previous one, from
+  `DEMO_ANCHOR_DATE`. A dismissed alert returns only when newer evidence arrives.
+
+There is deliberately **no time simulation**. Kate reacts to payments as they are booked, and
+the lookback windows are tested in the engine with explicit `asOf` dates.
 
 ## Rendering and hydration
 
 - The initial store state is computed at module load from static config and the fixed
-  `DEMO_ANCHOR_DATE`. That keeps the SSR and client first renders identical. Anything
-  non-deterministic in `derive()` (wall clock, `Math.random`, locale-dependent formatting)
-  causes a hydration mismatch.
-- Only components that read the store or use hooks are `"use client"`. `page.tsx` and
-  `layout.tsx` stay Server Components.
+  anchor date, so the SSR and client first renders match. Anything non-deterministic in
+  `derive()` or render (wall clock, `Math.random`, locale-less formatting) causes a hydration
+  mismatch.
+- Components that read the store are `"use client"`. `layout.tsx` stays a Server Component.
 
 ## Styling
 
-Tailwind 3 plus shadcn/ui (`new-york`, CSS variables). The brand tokens in
-`tailwind.config.ts` are `kbc-blue` `#00A3E0`, `kbc-navy` `#002D62`, and `kbc.*` (`blue-hover`,
-`blue-soft`, `navy-soft`, `gray`, `line`, `muted`). Use tokens, not raw hex or
-`bg-blue-500`. Custom shadows are `shadow-phone` and `shadow-kate`, and the animation is
-`animate-kate-pulse`.
+Tailwind 3 plus shadcn/ui. The KBC tokens are `kbc-blue` `#00A3E0` and `kbc-navy` `#002D62`,
+plus `kbc.*`. The phone uses `app-*` tokens from the Figma file and the dashboard uses
+`dash-*`. Use tokens, not raw hex. Figma assets live in `public/figma/`.
